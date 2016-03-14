@@ -1,0 +1,20 @@
+{
+  "name" : "pdo-db",
+  "version" : "0.1",
+  "require" : {
+    "php" : ">=5.5"
+  },
+  "repositories" : [ {
+    "type" : "composer",
+    "url" : "https://packagist.org/"
+  } ],
+  "autoload" : {
+    "psr-4" : {
+      "fangl\\" : "src/"
+    }
+  },
+  "authors" : [ {
+    "name" : "FangLiang",
+    "email" : "hustnaive@me.com"
+  } ]
+}
