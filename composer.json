@@ -1,5 +1,5 @@
 {
-  "name" : "pdo-db",
+  "name" : "hustnaive/pdo-db",
   "version" : "0.1",
   "require" : {
     "php" : ">=5.5"
