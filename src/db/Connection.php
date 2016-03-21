@@ -1,6 +1,12 @@
 <?php
 namespace fangl\db;
 
+/**
+ * $db = new \fangl\db\Connection($dsn, $username, $password);
+ * 
+ * @author fangl
+ *
+ */
 class Connection {
     
     private $dsn;
@@ -15,13 +21,14 @@ class Connection {
     
     private $pdo;
     
-    private $transaction;
+    private $transactionIsBegan = false;
     
     public function __construct($dsn, $username, $password, $options=[], $charset='utf8')
     {
         $this->dsn = $dsn;
         $this->username = $username;
         $this->password = $password;
+        $this->options = $options;
         $this->charset = $charset;
     }
     
@@ -38,6 +45,9 @@ class Connection {
         else {
             $this->pdo = new \PDO($this->dsn, $this->username, $this->password, $this->options);
             $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+            foreach($this->options as $k => $value) {
+                $this->pdo->setAttribute($k, $value);
+            }
             if ($this->charset !== null) {
                 $this->pdo->exec('SET NAMES ' . $this->pdo->quote($this->charset));
             } 
@@ -46,22 +56,28 @@ class Connection {
     
     public function close()
     {
+        if($this->transactionIsBegan) {
+            throw new DbException('you may forgot to end the transaction by calling commit or rollback');
+        }
         $this->pdo = null;
     }
     
     public function beginTransaction()
     {
         $this->open();
+        $this->transactionIsBegan = true;
         return $this->pdo->beginTransaction();
     }
     
     public function commit()
     {
+        $this->transactionIsBegan = false;
         return $this->pdo->commit();
     }
     
     public function rollBack()
     {
+        $this->transactionIsBegan = false;
         return $this->pdo->rollBack();
     }
     
@@ -70,18 +86,39 @@ class Connection {
         return $this->pdo->lastInsertId();
     }
     
-    public function createCommand($sql=null,$params=[])
+    /**
+     * create a sql command to be executed
+     * @param string $sql
+     * @param array $params
+     * @param string $autoClose whether to auto close the db after the sql been executed
+     * @return \fangl\db\Command
+     */
+    public function createCommand($sql=null, $params=[], $autoClose=false)
     {
         $this->open();
-        return new Command($this, $sql, $params);
+        if($autoClose && $this->transactionIsBegan) {
+            throw new DbException('there is a transaction block began here, you may move this code out of the block');
+        }
+        return new Command($this, $sql, $params, $autoClose);
     }
     
+    /**
+     * quote tthe value by pdo type
+     * @param mix $value
+     * @param string $type see ::getPdoType
+     * @return string
+     */
     public function quoteValue($value, $type=null)
     {
         $this->open();
         return $this->pdo->quote($value, $type == null ? $this->getPdoType($value):$type);
     }
     
+    /**
+     * return the pdo type of the data
+     * @param mix $data
+     * @return number
+     */
     public function getPdoType($data)
     {
         static $typeMap = [
@@ -97,18 +134,38 @@ class Connection {
         return isset($typeMap[$type]) ? $typeMap[$type] : \PDO::PARAM_STR;
     }
     
+    /**
+     * quote the table name with `
+     * @param string $name
+     * @return string
+     */
     public function quoteTable($name)
     {
-        return strpos(trim($name,'`'), "`") !== false ? $name : "`" . $name . "`";
+        $name = trim((string)$name,'`');
+        if(strpos($name, "`") !== false) {
+            throw new DbException("table name must not contain any charcter `, {$name} is given");
+        }
+        else {
+            return "`$name`";
+        }
     }
     
     public function quoteColumn($name)
     {
-        return strpos(trim($name,'`'), '`') !== false || $name === '*' ? $name : '`' . $name . '`';
+        $name = trim((string)$name,'`');
+        if(strpos($name, "`") !== false) {
+            throw new DbException("column name must not contain any charcter `, {$name} is given");
+        }
+        else {
+            return (string)$name === '*' ? (string)$name:"`$name`";
+        }
     }
     
-    public function getPdo()
+    public function getPdo($autoOpen = true)
     {
+        if($autoOpen) {
+            $this->open();
+        }
         return $this->pdo;
     }
     

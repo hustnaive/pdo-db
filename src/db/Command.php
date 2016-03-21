@@ -13,6 +13,8 @@ class Command {
     
     private $params;
     
+    private $autoClose;
+    
     private $fetchMode = \PDO::FETCH_ASSOC;  //\PDO::FETCH_ASSOC, \PDO::FETCH_BOTH
     
     private $lastSql;
@@ -22,14 +24,16 @@ class Command {
      */
     private $pdoStatement;
     
-    public function __construct(\fangl\db\Connection $db, $sql=null, $params=[])
+    public function __construct(\fangl\db\Connection $db, $sql=null, $params=[], $autoClose=false)
     {
         $this->db = $db;
         $this->sql = $sql;
         $this->params = $params;
+        $this->autoClose = $autoClose;
     }
     
-    public function lastSql() {
+    public function lastSql()
+    {
         return $this->lastSql;
     }
     
@@ -45,6 +49,9 @@ class Command {
         $result = call_user_func_array([$this->pdoStatement, $method], (array) $fetchMode);
         $this->pdoStatement->closeCursor();
         $this->pdoStatement = null;
+        if($this->autoClose) {
+            $this->db->close();
+        }
         return $result;
     }
     
@@ -52,12 +59,17 @@ class Command {
     {
         foreach ($this->params as $name => $value) {
             $v = is_array($value)?$value[0]:$value;
-            $t = is_array($value) && isset($value[1]) ? $value[1]:$this->db->getPdoType($v); // 支持： ['name'=>['fangl',\PDO::PARAM_STR]] 这种格式
+            $t = is_array($value) && isset($value[1]) ? $value[1]:$this->db->getPdoType($v); // 支持： ['name'=>['fangl',\PDO::PARAM_STR]] 这种格式以自定义参数类型
             $this->pdoStatement->bindValue($name, $v, $t);
         }
         $this->params = [];
     }
     
+    /**
+     * prepare the sql and bind params
+     * @throws DbException
+     * @return \fangl\db\Command
+     */
     protected function prepare()
     {
         if($this->pdoStatement) {
@@ -70,14 +82,14 @@ class Command {
                 $this->sql = null;
                 $this->bindPendingParams();
             }
-            else throw new \Exception('no sql to prepare');
+            else throw new DbException('no sql to prepare');
         }
         return $this;
     }
     
     /**
-     * excute the sql command
-     * @return unknown
+     * excute the sql command, may throws \PDOException
+     * @return int
      */
     public function execute()
     {
@@ -85,6 +97,9 @@ class Command {
         $this->pdoStatement->execute();
         $n = $this->pdoStatement->rowCount();
         $this->pdoStatement = null;
+        if($this->autoClose) {
+            $this->db->close();
+        }
         return $n;
     }
     
@@ -120,6 +135,12 @@ class Command {
         return $this->queryInternal('fetchAll', \PDO::FETCH_COLUMN);
     }
     
+    /**
+     * 
+     * @param string $table
+     * @param array $columns
+     * @return string|\fangl\db\Command
+     */
     public function insert($table, $columns)
     {
         $fields = array_map(function($value) { return $this->db->quoteColumn($value);}, array_keys($columns));
@@ -132,6 +153,15 @@ class Command {
         return $this->prepare();
     }
     
+    /**
+     * 
+     * @param string $table
+     * @param array $columns
+     * @param string $condition
+     * @param array $params to be bound in condition,could be set to empty array
+     * @throws DbException
+     * @return string|\fangl\db\Command
+     */
     public function update($table, $columns, $condition, $params=[])
     {
         $sets = array_map(function($value) { return $this->db->quoteColumn($value).' = :'.strtoupper($value); }, array_keys($columns));
@@ -139,7 +169,7 @@ class Command {
         if(is_string($condition)) {
             $this->sql .= ' WHERE '.$condition;
         }
-        else throw new \Exception('condition must be a string');
+        else throw new DbException('condition must be a string');
         
         $this->params = $params;
         foreach($columns as $k=>$v) {
@@ -148,17 +178,30 @@ class Command {
         return $this->prepare();
     }
     
+    /**
+     * delete from a table by some condition
+     * @param string $table
+     * @param string $condition
+     * @param array $params to be bound in condition
+     * @throws DbException
+     * @return \fangl\db\Command
+     */
     public function delete($table, $condition, $params=[])
     {
         $this->sql = 'DELETE FROM '.$this->db->quoteTable($table);
         if(is_string($condition)) {
             $this->sql .= ' WHERE '.$condition;
         }
-        else throw new \Exception('condition must be a string');
+        else throw new DbException('condition must be a string');
         $this->params = $params;
         return $this->prepare();
     }
     
+    /**
+     * truncate a table
+     * @param string $table
+     * @return \fangl\db\Command
+     */
     public function truncateTable($table)
     {
         $this->sql = 'TRUNCATE TABLE '.$this->db->quoteTable($table);
@@ -166,6 +209,14 @@ class Command {
         return $this->prepare();
     }
     
+    /**
+     * batchinsert some data
+     * @param string $table
+     * @param array $data
+     * @param array $fields if empty ,will use array_keys($data[0]) as the fields
+     * @throws Exception
+     * @return string
+     */
     public function batchInsert($table, $data, $fields=[])
     {
         if(empty($fields)) {
@@ -186,6 +237,9 @@ class Command {
             }
             $this->sql .= implode(',',$sqls);
             $this->execute();
+            if($this->autoClose) {
+                $this->db->close();
+            }
         }
         catch(\Exception $e) {
             $this->db->rollBack();

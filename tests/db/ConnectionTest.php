@@ -19,27 +19,60 @@ class ConnectionTest extends \PHPUnit_Framework_TestCase {
     
     public function testQuoteValue() {
         $values = [
-            [1,\PDO::PARAM_INT,"'1'"],
-            [true,\PDO::PARAM_BOOL,"'1'"],
-            [false,\PDO::PARAM_BOOL,"''"],
-            ['ab"c',\PDO::PARAM_STR,"'ab\\\"c'"],
-            ['ab\'c',\PDO::PARAM_STR,"'ab\'c'"]
+            [1,"'1'"],
+            [true,"'1'"],
+            [false,"''"],
+            ['ab"c',"'ab\\\"c'"],
+            ['ab\'c',"'ab\'c'"]
         ];
         $db = $this->getDb(__METHOD__);
         foreach($values as $v) {
-            $this->assertEquals($v[2], $db->quoteValue($v[0],$v[1]));
+            $this->assertEquals($v[1], $db->quoteValue($v[0]));
         }
     }
     
     public function testQuoteTable() {
         $tables = [
             ['abc','`abc`'],
-            ['`abc','`abc`'],
-            ['a`bc','`ab']
+            ['`abcd','`abcd`'],
+            ['abcd`','`abcd`'],
+//             ['a`bcde','`a`bcde`']  exception see ::testQuoteTableException
         ];
+        
+        $db = $this->getDb(__METHOD__);
+        foreach ($tables as $t) {
+            $this->assertEquals($t[1], $db->quoteTable($t[0]));
+        }
+    }
+    
+    /**
+     * @expectedException \fangl\db\DbException
+     */
+    public function testQuoteTableException() {
+        $db = $this->getDb(__METHOD__);
+        $db->quoteTable('a`bcde');
     }
     
     public function testQuoteColumn() {
+        $tables = [
+            ['abc','`abc`'],
+            ['`abcd','`abcd`'],
+            ['abcd`','`abcd`'],
+            ['*','*']
+            //             ['a`bcde','`a`bcde`']  exception see ::testQuoteColumnException
+        ];
         
+        $db = $this->getDb(__METHOD__);
+        foreach ($tables as $t) {
+            $this->assertEquals($t[1], $db->quoteColumn($t[0]));
+        }
+    }
+    
+    /**
+     * @expectedException \fangl\db\DbException
+     */
+    public function testQuoteColumnException() {
+        $db = $this->getDb(__METHOD__);
+        $db->quoteColumn('a`bcde');
     }
 }
