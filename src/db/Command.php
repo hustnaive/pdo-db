@@ -135,6 +135,16 @@ class Command {
         return $this->queryInternal('fetchAll', \PDO::FETCH_COLUMN);
     }
     
+    public function queryScalar()
+    {
+        $result = $this->queryInternal('fetchColumn', 0);
+        if (is_resource($result) && get_resource_type($result) === 'stream') {
+            return stream_get_contents($result);
+        } else {
+            return $result;
+        }
+    }
+    
     /**
      * 
      * @param string $table
